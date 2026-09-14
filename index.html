@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>專屬巴士到站預報器 - 實時數據版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        kmbRed: '#e53935',
+                        darkbg: '#121212',
+                        panelbg: '#1e1e1e',
+                        cardbg: '#2d2d2d'
+                    }
+                }
+            }
+        }
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #121212;
+            color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* 隱藏捲軸但保持可滾動 */
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+        .checkbox-custom:checked + div {
+            background-color: rgba(229, 57, 53, 0.2);
+            border-color: #e53935;
+        }
+        .checkbox-custom:checked + div .check-icon {
+            opacity: 1;
+            transform: scale(1);
+        }
+        /* 載入動畫 */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(229, 57, 53, 0); }
+            100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(229, 57, 53, 0); }
+        }
+        .animate-pulse-ring {
+            animation: pulse-ring 2s infinite cubic-bezier(0.66, 0, 0, 1);
+        }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col items-center">
+
+    <header class="w-full max-w-md bg-panelbg border-b border-gray-800 sticky top-0 z-50 shadow-md">
+        <div class="flex items-center justify-between px-4 py-3">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-kmbRed rounded-lg flex items-center justify-center shadow-lg">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </div>
+                <h1 class="text-xl font-bold text-white tracking-wider">實時巴士預報</h1>
+            </div>
+            <!-- 設定按鈕 -->
+            <button id="nav-settings-btn" class="p-2 text-gray-400 hover:text-white bg-gray-800 rounded-full transition-colors focus:outline-none">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="w-full max-w-md flex-1 relative overflow-hidden flex flex-col">
+        
+        <!-- 視圖 1: 預報主畫面 -->
+        <section id="view-main" class="flex-1 overflow-y-auto p-4 hidden flex-col">
+            <!-- 狀態列 (更新時間 & 手動重整) -->
+            <div class="flex justify-between items-center mb-4 bg-panelbg rounded-lg p-3 border border-gray-800 shadow-sm">
+                <div class="flex items-center gap-2">
+                    <div id="status-indicator" class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                    <span class="text-xs text-gray-400">最後更新: <span id="last-update-time" class="text-gray-300 font-mono">--:--:--</span></span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="countdown-text" class="text-xs font-mono text-kmbRed">30s</span>
+                    <button id="refresh-btn" class="text-gray-400 hover:text-white active:scale-95 transition-transform">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 路線列表容器 -->
+            <div id="eta-list" class="space-y-4 pb-10">
+                <!-- ETA 卡片將由 JS 動態插入這裡 -->
+            </div>
+
+            <!-- 載入中遮罩 -->
+            <div id="main-loader" class="hidden absolute inset-0 bg-darkbg/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
+                <div class="w-12 h-12 rounded-full bg-kmbRed/20 flex items-center justify-center animate-pulse-ring mb-4">
+                    <div class="w-6 h-6 rounded-full bg-kmbRed"></div>
+                </div>
+                <p class="text-gray-300 text-sm font-medium tracking-widest">獲取實時數據中...</p>
+            </div>
+        </section>
+
+        <!-- 視圖 2: 設定畫面 -->
+        <section id="view-settings" class="flex-1 overflow-y-auto p-4 flex flex-col bg-darkbg">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-white mb-2">站點設定</h2>
+                <p class="text-sm text-gray-400 leading-relaxed">請輸入九巴站點編號 (Stop ID) 以獲取該站的實時路線資料。設定將儲存於您的設備中。</p>
+            </div>
+
+            <!-- 步驟 1: 關鍵字搜尋 Stop ID (新增功能) -->
+            <div class="bg-panelbg rounded-xl p-4 border border-gray-800 mb-6 shadow-lg">
+                <label for="stop-name-search" class="block text-sm font-medium text-gray-300 mb-2">第一步：尋找站點 (不知 Stop ID 可在此搜尋)</label>
+                <div class="flex gap-2">
+                    <input type="text" id="stop-name-search" placeholder="例如: 觀塘定富街" 
+                        class="flex-1 bg-darkbg border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-kmbRed focus:ring-1 focus:ring-kmbRed transition-all font-sans text-sm">
+                    <button id="search-stop-name-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-medium px-4 py-3 rounded-lg transition-colors flex items-center justify-center min-w-[80px]">
+                        搜尋
+                    </button>
+                </div>
+                <div id="stop-search-msg" class="text-xs text-gray-400 mt-2 hidden"></div>
+                <div id="stop-search-results" class="space-y-2 mt-3 max-h-56 overflow-y-auto hidden pr-1">
+                    <!-- 搜尋結果將動態插入這裡 -->
+                </div>
+            </div>
+
+            <!-- 步驟 2: 輸入 Stop ID -->
+            <div class="bg-panelbg rounded-xl p-4 border border-gray-800 mb-6 shadow-lg">
+                <label for="stop-id-input" class="block text-sm font-medium text-gray-300 mb-2">第二步：確認 Stop ID 並獲取路線</label>
+                <div class="flex gap-2">
+                    <input type="text" id="stop-id-input" placeholder="例如: 7380707A36C032B9" 
+                        class="flex-1 bg-darkbg border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:border-kmbRed focus:ring-1 focus:ring-kmbRed transition-all font-mono text-sm uppercase">
+                    <button id="find-routes-btn" class="bg-kmbRed hover:bg-red-600 text-white font-medium px-4 py-3 rounded-lg transition-colors flex items-center justify-center min-w-[80px]">
+                        尋找
+                    </button>
+                </div>
+                <p id="stop-id-error" class="text-red-400 text-xs mt-2 hidden">找不到該站點資料，請檢查 Stop ID。</p>
+            </div>
+
+            <!-- 步驟 2: 選擇路線 (預設隱藏) -->
+            <div id="route-selection-area" class="hidden flex-col flex-1 pb-20">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold text-gray-300 uppercase tracking-wider">請選擇關注路線</h3>
+                    <span id="route-count" class="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-md">共 0 條</span>
+                </div>
+                
+                <div id="routes-checkbox-list" class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                    <!-- Checkbox 列表將由 JS 動態生成 -->
+                </div>
+            </div>
+
+            <!-- 底部固定儲存按鈕 (預設隱藏) -->
+            <div id="save-settings-area" class="hidden fixed bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-darkbg via-darkbg to-transparent backdrop-blur-sm z-20">
+                <div class="max-w-md mx-auto flex gap-3">
+                    <button id="cancel-settings-btn" class="hidden flex-1 bg-gray-800 hover:bg-gray-700 text-white font-bold py-3.5 px-4 rounded-xl transition-colors">
+                        取消
+                    </button>
+                    <button id="save-settings-btn" class="flex-[2] bg-white text-black hover:bg-gray-200 font-bold py-3.5 px-4 rounded-xl shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2">
+                        <span>儲存並開始預報</span>
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 吐司通知 (Toast) -->
+        <div id="toast" class="fixed top-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-full shadow-xl border border-gray-700 text-sm font-medium transition-all duration-300 opacity-0 pointer-events-none z-50 flex items-center gap-2">
+            <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+            <span id="toast-msg">設定已儲存</span>
+        </div>
+
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // -- DOM 元素綁定 --
+            const viewMain = document.getElementById('view-main');
+            const viewSettings = document.getElementById('view-settings');
+            const navSettingsBtn = document.getElementById('nav-settings-btn');
+            
+            // 新增：站點搜尋元素
+            const stopNameSearch = document.getElementById('stop-name-search');
+            const searchStopNameBtn = document.getElementById('search-stop-name-btn');
+            const stopSearchResults = document.getElementById('stop-search-results');
+            const stopSearchMsg = document.getElementById('stop-search-msg');
+
+            // 設置頁面元素
+            const stopIdInput = document.getElementById('stop-id-input');
+            const findRoutesBtn = document.getElementById('find-routes-btn');
+            const routeSelectionArea = document.getElementById('route-selection-area');
+            const routesCheckboxList = document.getElementById('routes-checkbox-list');
+            const saveSettingsArea = document.getElementById('save-settings-area');
+            const saveSettingsBtn = document.getElementById('save-settings-btn');
+            const cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+            const stopIdError = document.getElementById('stop-id-error');
+            const routeCount = document.getElementById('route-count');
+            
+            // 主頁面元素
+            const etaList = document.getElementById('eta-list');
+            const refreshBtn = document.getElementById('refresh-btn');
+            const mainLoader = document.getElementById('main-loader');
+            const lastUpdateTime = document.getElementById('last-update-time');
+            const countdownText = document.getElementById('countdown-text');
+            const statusIndicator = document.getElementById('status-indicator');
+            const toast = document.getElementById('toast');
+            const toastMsg = document.getElementById('toast-msg');
+
+            // -- 狀態變數 --
+            let currentConfig = {
+                stopId: '',
+                routes: [] // 儲存使用者勾選的路線
+            };
+            
+            // 用於儲存設定頁面臨時獲取的所有路線
+            let tempAvailableRoutes = []; 
+            
+            // 用於快取所有巴士站數據 (避免重複載入大型 JSON)
+            let allKmbStopsCache = null;
+            
+            // 自動更新計時器
+            let refreshInterval;
+            let countdownInterval;
+            let timeRemaining = 30;
+
+            // -- 初始化 --
+            initApp();
+
+            function initApp() {
+                // 從 localStorage 讀取設定
+                const savedStopId = localStorage.getItem('kmb_stopId');
+                const savedRoutesStr = localStorage.getItem('kmb_routes');
+
+                if (savedStopId && savedRoutesStr) {
+                    try {
+                        currentConfig.stopId = savedStopId;
+                        currentConfig.routes = JSON.parse(savedRoutesStr);
+                        
+                        // 填入設定頁面的輸入框
+                        stopIdInput.value = savedStopId;
+                        
+                        // 顯示取消按鈕 (因為有舊資料可以退回)
+                        cancelSettingsBtn.classList.remove('hidden');
+                        
+                        // 有設定，直接進入主畫面並獲取數據
+                        switchView('main');
+                        fetchETAData();
+                        startAutoRefresh();
+                    } catch (e) {
+                        console.error('解析儲存的設定失敗', e);
+                        switchView('settings');
+                    }
+                } else {
+                    // 沒設定，進入設定畫面
+                    switchView('settings');
+                    // 預設填寫文章中的 ID 以便測試
+                    stopIdInput.value = '7380707A36C032B9';
+                }
+            }
+
+            function switchView(view) {
+                if (view === 'main') {
+                    viewSettings.classList.add('hidden');
+                    viewMain.classList.remove('hidden');
+                    viewMain.classList.add('flex');
+                } else {
+                    viewMain.classList.add('hidden');
+                    viewMain.classList.remove('flex');
+                    viewSettings.classList.remove('hidden');
+                    // 暫停主畫面的自動更新
+                    stopAutoRefresh();
+                }
+            }
+
+            function showToast(message) {
+                toastMsg.textContent = message;
+                toast.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+                setTimeout(() => {
+                    toast.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+                }, 2500);
+            }
+
+            // -- 導航按鈕事件 --
+            navSettingsBtn.addEventListener('click', () => {
+                switchView('settings');
+            });
+            
+            cancelSettingsBtn.addEventListener('click', () => {
+                switchView('main');
+                startAutoRefresh();
+            });
+
+            // -- 新增：搜尋站點名稱功能 --
+            searchStopNameBtn.addEventListener('click', async () => {
+                const keyword = stopNameSearch.value.trim();
+                if (!keyword) {
+                    showSearchMsg('請輸入巴士站名稱，例如：觀塘定富街', 'text-yellow-400');
+                    return;
+                }
+
+                // UI 狀態：載入中
+                searchStopNameBtn.disabled = true;
+                searchStopNameBtn.innerHTML = '<div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+                stopSearchResults.classList.add('hidden');
+                showSearchMsg('正在載入全港站點資料，請稍候...', 'text-gray-400');
+
+                try {
+                    // 如果尚未快取，則呼叫 API 獲取全港巴士站
+                    if (!allKmbStopsCache) {
+                        const response = await fetch('https://data.etabus.gov.hk/v1/transport/kmb/stop');
+                        if (!response.ok) throw new Error('API Request Failed');
+                        const json = await response.json();
+                        allKmbStopsCache = json.data;
+                    }
+
+                    // 過濾符合關鍵字的站點 (支援中英文搜尋)
+                    const results = allKmbStopsCache.filter(stop => 
+                        (stop.name_tc && stop.name_tc.includes(keyword)) || 
+                        (stop.name_sc && stop.name_sc.includes(keyword)) || 
+                        (stop.name_en && stop.name_en.toLowerCase().includes(keyword.toLowerCase()))
+                    );
+
+                    if (results.length === 0) {
+                        showSearchMsg('找不到相符的站點，請嘗試其他關鍵字。', 'text-yellow-400');
+                    } else {
+                        renderStopSearchResults(results);
+                        showSearchMsg(`找到 ${results.length} 個相關候車位置，請選擇：`, 'text-green-400');
+                    }
+                } catch (error) {
+                    console.error('Search error:', error);
+                    showSearchMsg('載入站點資料失敗，請檢查網絡連線。', 'text-red-400');
+                } finally {
+                    searchStopNameBtn.disabled = false;
+                    searchStopNameBtn.textContent = '搜尋';
+                }
+            });
+
+            function showSearchMsg(msg, colorClass) {
+                stopSearchMsg.textContent = msg;
+                stopSearchMsg.className = `text-xs mt-2 ${colorClass}`;
+                stopSearchMsg.classList.remove('hidden');
+            }
+
+            function renderStopSearchResults(results) {
+                stopSearchResults.innerHTML = '';
+                results.forEach(stop => {
+                    const div = document.createElement('div');
+                    div.className = 'flex justify-between items-center bg-darkbg p-3 rounded-lg border border-gray-700 hover:border-kmbRed transition-colors group';
+                    
+                    // 中文名 + 英文名 + ID
+                    div.innerHTML = `
+                        <div class="flex-1 pr-2">
+                            <div class="text-white text-sm font-bold flex items-center gap-2">
+                                ${stop.name_tc}
+                            </div>
+                            <div class="text-xs text-gray-500 mt-0.5">${stop.name_en}</div>
+                            <div class="text-[10px] bg-gray-800 text-gray-400 px-1.5 py-0.5 rounded inline-block mt-1">ID: ${stop.stop}</div>
+                        </div>
+                        <button class="use-stop-id-btn bg-gray-700 group-hover:bg-kmbRed text-white text-xs font-medium px-3 py-2 rounded shadow transition-all active:scale-95 whitespace-nowrap" data-id="${stop.stop}">
+                            選擇此站
+                        </button>
+                    `;
+                    stopSearchResults.appendChild(div);
+                });
+
+                // 綁定「選擇此站」按鈕事件
+                const useBtns = stopSearchResults.querySelectorAll('.use-stop-id-btn');
+                useBtns.forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const selectedId = e.currentTarget.getAttribute('data-id');
+                        stopIdInput.value = selectedId;
+                        
+                        // 自動觸發尋找路線
+                        findRoutesBtn.click();
+                        
+                        // 清理搜尋結果 (讓畫面更乾淨)
+                        stopSearchResults.classList.add('hidden');
+                        showSearchMsg('已選擇站點並獲取路線中...', 'text-green-400');
+                        
+                        // 平滑滾動到結果區域
+                        setTimeout(() => {
+                            const targetArea = document.getElementById('route-selection-area');
+                            if (targetArea) {
+                                targetArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }
+                        }, 300);
+                    });
+                });
+
+                stopSearchResults.classList.remove('hidden');
+            }
+
+            // -- 設定頁：尋找路線 --
+            findRoutesBtn.addEventListener('click', async () => {
+                const stopId = stopIdInput.value.trim().toUpperCase();
+                if (!stopId) return;
+
+                // UI 狀態：載入中
+                findRoutesBtn.disabled = true;
+                findRoutesBtn.innerHTML = '<div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+                stopIdError.classList.add('hidden');
+                routeSelectionArea.classList.add('hidden');
+                saveSettingsArea.classList.add('hidden');
+
+                try {
+                    // 呼叫九巴 ETA API 來獲取該站點資料
+                    const response = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${stopId}`);
+                    
+                    if (!response.ok) throw new Error('API Request Failed');
+                    
+                    const json = await response.json();
+                    
+                    if (!json.data || json.data.length === 0) {
+                        throw new Error('No data found for this Stop ID');
+                    }
+
+                    // 解析出獨特的路線與目的地
+                    const routesMap = new Map();
+                    json.data.forEach(item => {
+                        // 使用 route + dest_tc 作為唯一鍵，避免同一路線不同方向混淆
+                        const key = `${item.route}|${item.dest_tc}`;
+                        if (!routesMap.has(key)) {
+                            routesMap.set(key, {
+                                route: item.route,
+                                dest: item.dest_tc
+                            });
+                        }
+                    });
+
+                    tempAvailableRoutes = Array.from(routesMap.values());
+                    
+                    // 按路線號碼排序
+                    tempAvailableRoutes.sort((a, b) => a.route.localeCompare(b.route, undefined, {numeric: true, sensitivity: 'base'}));
+
+                    // 渲染 Checkbox 列表
+                    renderRouteCheckboxes(tempAvailableRoutes);
+                    
+                    // UI 狀態：顯示結果
+                    routeCount.textContent = `共 ${tempAvailableRoutes.length} 條`;
+                    routeSelectionArea.classList.remove('hidden');
+                    routeSelectionArea.classList.add('flex');
+                    saveSettingsArea.classList.remove('hidden');
+
+                } catch (error) {
+                    console.error('Fetch error:', error);
+                    stopIdError.classList.remove('hidden');
+                } finally {
+                    // 恢復按鈕狀態
+                    findRoutesBtn.disabled = false;
+                    findRoutesBtn.textContent = '尋找';
+                }
+            });
+
+            function renderRouteCheckboxes(routes) {
+                routesCheckboxList.innerHTML = '';
+                
+                routes.forEach((rt, index) => {
+                    const uniqueId = `route-chk-${index}`;
+                    // 檢查是否已被選過 (若使用者重新打開設定)
+                    const isChecked = currentConfig.routes.some(r => r.route === rt.route && r.dest === rt.dest) ? 'checked' : '';
+
+                    const label = document.createElement('label');
+                    label.className = 'block relative cursor-pointer group';
+                    
+                    label.innerHTML = `
+                        <input type="checkbox" class="checkbox-custom absolute opacity-0 w-0 h-0" id="${uniqueId}" value="${rt.route}|${rt.dest}" ${isChecked}>
+                        <div class="flex justify-between items-center bg-cardbg border border-gray-700 rounded-lg p-3 transition-all hover:border-gray-500">
+                            <div class="flex items-center gap-3">
+                                <span class="bg-white text-black font-black text-lg px-2 rounded min-w-[3rem] text-center">${rt.route}</span>
+                                <div class="flex flex-col">
+                                    <span class="text-[10px] text-gray-400 leading-none mb-1">往</span>
+                                    <span class="text-sm font-medium text-white leading-none">${rt.dest}</span>
+                                </div>
+                            </div>
+                            <div class="w-6 h-6 rounded-full border-2 border-gray-600 flex items-center justify-center bg-darkbg transition-colors check-container">
+                                <svg class="w-4 h-4 text-kmbRed opacity-0 transform scale-50 transition-all check-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                        </div>
+                    `;
+                    routesCheckboxList.appendChild(label);
+                });
+            }
+
+            // -- 儲存設定 --
+            saveSettingsBtn.addEventListener('click', () => {
+                const checkboxes = routesCheckboxList.querySelectorAll('input[type="checkbox"]:checked');
+                
+                if (checkboxes.length === 0) {
+                    alert('請至少選擇一條路線！');
+                    return;
+                }
+
+                const selectedRoutes = Array.from(checkboxes).map(cb => {
+                    const [route, dest] = cb.value.split('|');
+                    return { route, dest };
+                });
+
+                // 更新配置
+                currentConfig.stopId = stopIdInput.value.trim().toUpperCase();
+                currentConfig.routes = selectedRoutes;
+
+                // 存入 LocalStorage
+                localStorage.setItem('kmb_stopId', currentConfig.stopId);
+                localStorage.setItem('kmb_routes', JSON.stringify(currentConfig.routes));
+
+                // 顯示可取消按鈕
+                cancelSettingsBtn.classList.remove('hidden');
+
+                showToast('設定已儲存');
+                
+                // 切換視圖並載入數據
+                switchView('main');
+                fetchETAData();
+                startAutoRefresh();
+            });
+
+            // -- 手動重整 --
+            refreshBtn.addEventListener('click', () => {
+                fetchETAData();
+                resetCountdown();
+            });
+
+            // -- 核心功能：獲取實時數據 --
+            async function fetchETAData() {
+                if (!currentConfig.stopId || currentConfig.routes.length === 0) return;
+
+                mainLoader.classList.remove('hidden');
+                statusIndicator.classList.remove('bg-green-500');
+                statusIndicator.classList.add('bg-yellow-500'); // 載入中顏色
+
+                try {
+                    const response = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${currentConfig.stopId}`);
+                    if (!response.ok) throw new Error('API request failed');
+                    
+                    const json = await response.json();
+                    const now = new Date();
+                    
+                    // 過濾並分組數據
+                    const groupedData = processData(json.data, now);
+                    
+                    // 渲染卡片
+                    renderETACards(groupedData);
+
+                    // 更新時間顯示
+                    lastUpdateTime.textContent = now.toLocaleTimeString('zh-HK', { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' });
+                    statusIndicator.classList.remove('bg-yellow-500', 'bg-red-500');
+                    statusIndicator.classList.add('bg-green-500'); // 成功顏色
+
+                } catch (error) {
+                    console.error('Failed to fetch ETA:', error);
+                    etaList.innerHTML = `<div class="p-6 text-center text-gray-400 bg-cardbg rounded-xl border border-gray-800"><p>無法獲取數據，請稍後重試。</p><p class="text-xs mt-2">${error.message}</p></div>`;
+                    statusIndicator.classList.remove('bg-green-500', 'bg-yellow-500');
+                    statusIndicator.classList.add('bg-red-500'); // 錯誤顏色
+                } finally {
+                    mainLoader.classList.add('hidden');
+                }
+            }
+
+            // 處理 API 返回的原始數據
+            function processData(rawData, currentTime) {
+                // 1. 建立一個 Map 用來存放過濾後的各路線班次
+                // 鍵名格式: "路線號碼|目的地"
+                const groups = new Map();
+
+                // 初始化使用者選擇的路線，確保即使沒車也會顯示該卡片
+                currentConfig.routes.forEach(conf => {
+                    groups.set(`${conf.route}|${conf.dest}`, {
+                        route: conf.route,
+                        dest: conf.dest,
+                        buses: []
+                    });
+                });
+
+                // 2. 遍歷 API 數據，分類並計算倒數分鐘
+                rawData.forEach(item => {
+                    const key = `${item.route}|${item.dest_tc}`;
+                    
+                    // 只處理用戶選擇的路線
+                    if (groups.has(key)) {
+                        let minutesLeft = null;
+                        
+                        if (item.eta) {
+                            const etaTime = new Date(item.eta);
+                            const diffMs = etaTime - currentTime;
+                            // 轉換為分鐘，無條件捨去
+                            minutesLeft = Math.floor(diffMs / 60000);
+                        }
+
+                        // 如果 eta 為 null 或者時間已過太多 (<-5) 則忽略
+                        if (minutesLeft !== null && minutesLeft > -5) {
+                            groups.get(key).buses.push({
+                                seq: item.eta_seq, // 班次順序 1, 2, 3
+                                minutes: minutesLeft,
+                                rmk: item.rmk_tc // 備註，如"原定班次"
+                            });
+                        }
+                    }
+                });
+
+                // 3. 對每個群組內的班次按 seq 排序，並最多保留 3 班
+                const result = [];
+                groups.forEach(group => {
+                    // 根據分鐘數排序 (以防 seq 亂序)
+                    group.buses.sort((a, b) => a.minutes - b.minutes);
+                    // 只取前 3 班
+                    group.buses = group.buses.slice(0, 3);
+                    result.push(group);
+                });
+
+                // 根據路線號碼排序最終結果
+                result.sort((a, b) => a.route.localeCompare(b.route, undefined, {numeric: true, sensitivity: 'base'}));
+                
+                return result;
+            }
+
+            function renderETACards(groupedData) {
+                etaList.innerHTML = '';
+
+                if (groupedData.length === 0) {
+                    etaList.innerHTML = '<div class="p-4 text-center text-gray-500">無相關路線資料。</div>';
+                    return;
+                }
+
+                groupedData.forEach(group => {
+                    const card = document.createElement('div');
+                    card.className = 'bg-cardbg rounded-xl border border-gray-700/50 overflow-hidden shadow-lg';
+
+                    // 卡片頭部 (路線與目的地)
+                    const header = document.createElement('div');
+                    header.className = 'px-4 py-3 bg-gray-800/50 border-b border-gray-700/50 flex justify-between items-center';
+                    header.innerHTML = `
+                        <div class="flex items-center gap-3">
+                            <span class="bg-white text-black font-black text-xl px-2 py-0.5 rounded min-w-[3.5rem] text-center shadow">${group.route}</span>
+                            <div class="flex flex-col">
+                                <span class="text-xs text-gray-400">往</span>
+                                <span class="text-white font-bold tracking-wide">${group.dest}</span>
+                            </div>
+                        </div>
+                    `;
+                    card.appendChild(header);
+
+                    // 卡片內容 (班次列表)
+                    const body = document.createElement('div');
+                    body.className = 'p-0';
+
+                    if (group.buses.length === 0) {
+                        body.innerHTML = '<div class="px-4 py-6 text-center text-gray-500 text-sm">暫無預定班次 / 服務已停止</div>';
+                    } else {
+                        const ul = document.createElement('ul');
+                        ul.className = 'divide-y divide-gray-700/30';
+
+                        group.buses.forEach((bus, index) => {
+                            const li = document.createElement('li');
+                            li.className = 'px-4 py-3 flex justify-between items-center';
+                            
+                            // 決定顯示文字與顏色
+                            let timeText = '';
+                            let timeColorClass = '';
+                            let isUrgent = false;
+
+                            if (bus.minutes <= 0) {
+                                timeText = '即將到站';
+                                timeColorClass = 'text-kmbRed font-black animate-pulse';
+                                isUrgent = true;
+                            } else {
+                                timeText = `<span class="text-2xl">${bus.minutes}</span> <span class="text-sm font-normal">分鐘</span>`;
+                                if (bus.minutes <= 5) {
+                                    timeColorClass = 'text-orange-400 font-bold';
+                                } else {
+                                    timeColorClass = 'text-white font-medium';
+                                }
+                            }
+
+                            // 備註處理 (如果有)
+                            const rmkHtml = bus.rmk ? `<span class="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded ml-2">${bus.rmk}</span>` : '';
+
+                            li.innerHTML = `
+                                <div class="flex items-center gap-3">
+                                    <div class="flex flex-col items-center justify-center w-6">
+                                        <div class="w-2 h-2 rounded-full ${index === 0 ? (isUrgent ? 'bg-kmbRed' : 'bg-green-500') : 'bg-gray-600'}"></div>
+                                        ${index < group.buses.length - 1 ? '<div class="w-[1px] h-6 bg-gray-700 absolute mt-8"></div>' : ''}
+                                    </div>
+                                    <span class="text-sm text-gray-400 font-mono">班次 ${index + 1} ${rmkHtml}</span>
+                                </div>
+                                <div class="${timeColorClass} tracking-wide text-right">
+                                    ${timeText}
+                                </div>
+                            `;
+                            ul.appendChild(li);
+                        });
+                        body.appendChild(ul);
+                    }
+
+                    card.appendChild(body);
+                    etaList.appendChild(card);
+                });
+            }
+
+            function startAutoRefresh() {
+                // 清除現有的
+                stopAutoRefresh();
+                
+                timeRemaining = 30;
+                countdownText.textContent = `${timeRemaining}s`;
+
+                // 倒數計時器 (每秒更新 UI)
+                countdownInterval = setInterval(() => {
+                    timeRemaining--;
+                    if (timeRemaining <= 0) {
+                        timeRemaining = 30; // 重置
+                    }
+                    countdownText.textContent = `${timeRemaining}s`;
+                }, 1000);
+
+                // 獲取資料計時器 (每 30 秒)
+                refreshInterval = setInterval(() => {
+                    fetchETAData();
+                }, 30000);
+            }
+
+            function stopAutoRefresh() {
+                if (countdownInterval) clearInterval(countdownInterval);
+                if (refreshInterval) clearInterval(refreshInterval);
+            }
+
+            function resetCountdown() {
+                timeRemaining = 30;
+                countdownText.textContent = '30s';
+                // 重啟計時器，避免手動重整後馬上又自動重整
+                startAutoRefresh(); 
+            }
+        });
+    </script>
+</body>
+</html>
