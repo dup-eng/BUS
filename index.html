@@ -153,7 +153,7 @@
                 <span class="text-xs text-gray-400">最後更新: <span id="last-update-time" class="text-white font-mono">--:--:--</span></span>
             </div>
             <div class="flex items-center gap-3">
-                <span id="countdown-text" class="text-xs font-mono text-gray-400">30s</span>
+                <span id="countdown-text" class="text-xs font-mono text-gray-400">15s</span>
                 <button id="refresh-btn" class="bg-gray-800 hover:bg-gray-700 text-gray-300 p-1.5 rounded text-xs transition-colors border border-gray-700">
                     🔄 手動更新
                 </button>
@@ -166,7 +166,10 @@
             let appConfig = { stopId: '', company: '', stopName: '', routes: [] };
             let bookmarks = [];
             let timerInterval = null;
-            let timeRemaining = 15;
+            
+            // 在這裡設定你的專屬更新時間（秒）
+            const REFRESH_INTERVAL = 15; 
+            let timeRemaining = REFRESH_INTERVAL;
             
             let allStopsCache = []; 
             let allRoutesCache = []; 
@@ -916,7 +919,7 @@
                     statusIndicator.classList.replace('bg-yellow-500', 'bg-red-500');
                 } finally {
                     mainLoader.classList.add('hidden');
-                    timeRemaining = 30;
+                    timeRemaining = REFRESH_INTERVAL;
                     countdownText.textContent = `${timeRemaining}s`;
                 }
             }
@@ -1052,7 +1055,7 @@
 
             function startTimer() {
                 if (timerInterval) clearInterval(timerInterval);
-                timeRemaining = 30;
+                timeRemaining = REFRESH_INTERVAL;
                 countdownText.textContent = `${timeRemaining}s`;
                 timerInterval = setInterval(() => {
                     timeRemaining--;
